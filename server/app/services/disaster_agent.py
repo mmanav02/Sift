@@ -157,11 +157,11 @@ TOOLS: list[dict] = [
                     },
                     "city": {
                         "type": "string",
-                        "description": "Nearest city or district. For US: city name (e.g. 'Houston'). For international: nearest city or district (e.g. 'Dhaka', 'Chittagong'). Never put a country name here.",
+                        "description": "Nearest city or district only — e.g. 'Houston', 'Ibusuki', 'Dhaka'. Never put country name in city.",
                     },
                     "state": {
                         "type": "string",
-                        "description": "For US: state name (e.g. 'Texas'). For international: state, province, or division (e.g. 'Dhaka Division', 'Punjab'). If no subdivision exists, use the country name (e.g. 'Bangladesh').",
+                        "description": "For US: state (e.g. 'Texas'). For international: prefecture/region/province (e.g. 'Kagoshima Prefecture', 'Punjab'). If no subdivision, use country (e.g. 'Japan').",
                     },
                     "lat":         {"type": "number", "description": "Latitude of event"},
                     "lng":         {"type": "number", "description": "Longitude of event"},
@@ -191,7 +191,12 @@ PROCEDURE — follow this order every run:
 3. Call fetch_nasa_eonet           (always)
 4. Call fetch_gdacs_alerts         (always)
 5. Always call search_web once for recent disaster news — if it fails or returns no results, skip and continue
-6. Call save_disaster_alert for each REAL, SIGNIFICANT, CURRENT event found
+6. For EACH event that meets SAVE CRITERIA below, call save_disaster_alert ONCE (one tool call per event).
+7. Only AFTER you have called save_disaster_alert for every qualifying event, output a brief summary.
+
+You MUST call save_disaster_alert for every event that meets the SAVE CRITERIA. Do not output a final summary until you have called save_disaster_alert for each such event.
+
+CITY/STATE for international events: Use the nearest city or district for "city" (e.g. Ibusuki) and prefecture/region for "state" (e.g. Kagoshima Prefecture). Never put the country name in "city". When in doubt, still call save_disaster_alert.
 
 SAVE CRITERIA — save ONLY if ALL of these are true:
   ✓ Event is real (from official API or confirmed news source)
@@ -206,7 +211,7 @@ DO NOT SAVE:
   ✗ Test messages or exercises
   ✗ Events you've already saved in this run
 
-After all tools are done, briefly summarize what you found and saved."""
+After you have saved all qualifying events, briefly summarize what you found and saved."""
 
 
 class DisasterAgent:
@@ -248,6 +253,7 @@ class DisasterAgent:
             return {"status": "error", "reason": "H4H client failed to initialize"}
 
         alerts_saved = 0
+        recovery_prompt_sent = False
 
         try:
             messages = [
@@ -290,6 +296,22 @@ class DisasterAgent:
                 })
 
                 if not msg.tool_calls:
+                    # Recovery: if we got data from sources but saved nothing, prompt to save
+                    if (
+                        not recovery_prompt_sent
+                        and len(agent_status["sources_checked"]) > 0
+                        and alerts_saved == 0
+                    ):
+                        recovery_prompt_sent = True
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                "You have not called save_disaster_alert for any qualifying events from the data you received. "
+                                "Call save_disaster_alert for each event that meets the SAVE CRITERIA now (one call per event), then summarize."
+                            ),
+                        })
+                        logger.info("[DisasterAgent] ⚠️ No saves yet — prompting agent to save qualifying events")
+                        continue
                     logger.info(f"[DisasterAgent] ✅ Agent finished — {iteration + 1} iteration(s)")
                     if msg.content:
                         logger.info(f"[DisasterAgent] Summary: {msg.content[:500]}")
