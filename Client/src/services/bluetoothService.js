@@ -4,6 +4,7 @@
 
 import { BleManager } from 'react-native-ble-plx';
 import { Platform, PermissionsAndroid } from 'react-native';
+import { Buffer } from 'buffer';
 import { BLE_CONFIG, APP_CONFIG } from '../config/constants.js';
 
 const { SERVICE_UUID, CHARACTERISTIC_UUID, DEVICE_NAME_PREFIX, SCAN_DURATION_MS } = BLE_CONFIG;
@@ -14,6 +15,7 @@ class BluetoothService {
     this._connectedDevices = new Map();
     this._connectingIds = new Set();
     this._onMessage = null;
+    this._onDeviceFound = null;
   }
 
   async requestBluetoothPermissions() {
@@ -47,6 +49,7 @@ class BluetoothService {
   }
 
   startScanning(onDeviceFound) {
+    this._onDeviceFound = onDeviceFound ?? null;
     this._manager.startDeviceScan(
       null,
       { allowDuplicates: false },
@@ -56,7 +59,7 @@ class BluetoothService {
           return;
         }
         if (device && device.name && device.name.startsWith(DEVICE_NAME_PREFIX)) {
-          onDeviceFound?.(device);
+          this._onDeviceFound?.(device);
         }
       }
     );
@@ -64,6 +67,12 @@ class BluetoothService {
 
   stopScanning() {
     this._manager.stopDeviceScan();
+  }
+
+  restartScanning() {
+    if (!this._onDeviceFound) return;
+    try { this.stopScanning(); } catch (_) {}
+    setTimeout(() => this.startScanning(this._onDeviceFound), 500);
   }
 
   isDeviceConnected(deviceId) {
@@ -75,12 +84,33 @@ class BluetoothService {
     if (this._connectingIds.has(device.id)) return null;
     this._connectingIds.add(device.id);
     try {
-      await device.connect();
+      await device.connect({ refreshGatt: 'OnConnected' });
+      await device.requestMTU(512);
       const discovered = await device.discoverAllServicesAndCharacteristics();
       this._connectedDevices.set(device.id, { device: discovered, name: device.name || null });
       discovered.onDisconnected(() => {
         this._connectedDevices.delete(device.id);
       });
+      if (this._onMessage) {
+        try {
+          discovered.monitorCharacteristicForService(
+            SERVICE_UUID,
+            CHARACTERISTIC_UUID,
+            (error, characteristic) => {
+              if (error || !characteristic?.value || !this._onMessage) return;
+              try {
+                const decoded = Buffer.from(characteristic.value, 'base64').toString('utf8');
+                const data = JSON.parse(decoded);
+                this._onMessage(data);
+              } catch (e) {
+                if (APP_CONFIG.DEBUG_MODE) {
+                  console.warn('[BluetoothService] monitor parse failed', e?.message);
+                }
+              }
+            }
+          );
+        } catch (_) {}
+      }
       return discovered;
     } catch (e) {
       console.warn('[BluetoothService] connectToDevice failed', e);
@@ -132,7 +162,7 @@ class BluetoothService {
         );
       } catch (e) {
         const msg = (e?.message || String(e)).toLowerCase();
-        if (msg.includes('not connected') || msg.includes('disconnected') || msg.includes('timed out') || msg.includes('rejected')) {
+        if (msg.includes('not connected') || msg.includes('disconnected') || msg.includes('timed out') || msg.includes('rejected') || msg.includes('not found')) {
           toRemove.push(id);
         }
         if (APP_CONFIG.DEBUG_MODE) {
@@ -166,7 +196,6 @@ class BluetoothService {
 
   listenForAlerts(onMessage) {
     this._onMessage = onMessage;
-    // Optional: subscribe to characteristic on connected devices when needed
   }
 
   destroy() {

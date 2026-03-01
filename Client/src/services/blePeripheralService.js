@@ -64,27 +64,8 @@ class BlePeripheralService {
 
     this._peripheral = new Peripheral();
 
-    this._peripheral.on('ready', async () => {
-      try {
-        await this._peripheral.addService(SERVICE_UUID, true);
-        await this._peripheral.addCharacteristic(
-          SERVICE_UUID,
-          CHARACTERISTIC_UUID,
-          Property.READ | Property.WRITE | Property.WRITE_NO_RESPONSE,
-          Permission.READABLE | Permission.WRITEABLE
-        );
-        await this._peripheral.startAdvertising();
-        this._advertising = true;
-        if (APP_CONFIG.DEBUG_MODE) {
-          console.log('[BlePeripheralService] advertising as', name);
-        }
-      } catch (e) {
-        console.warn('[BlePeripheralService] startAdvertising failed', e?.message);
-      }
-    });
-
-    this._peripheral.on('write', ({ serviceUuid, characteristicUuid, value }) => {
-      if (characteristicUuid !== CHARACTERISTIC_UUID || !this._onAlertReceived) return;
+    this._peripheral.on('write', ({ service, characteristic, value }) => {
+      if (characteristic !== CHARACTERISTIC_UUID || !this._onAlertReceived) return;
       try {
         let data;
         if (typeof value === 'string') {
@@ -105,6 +86,29 @@ class BlePeripheralService {
 
     this._peripheral.on('error', (err) => {
       console.warn('[BlePeripheralService] error', err?.message);
+    });
+
+    await new Promise((resolve, reject) => {
+      this._peripheral.on('ready', async () => {
+        try {
+          await this._peripheral.addService(SERVICE_UUID, true);
+          await this._peripheral.addCharacteristic(
+            SERVICE_UUID,
+            CHARACTERISTIC_UUID,
+            Property.READ | Property.WRITE | Property.WRITE_NO_RESPONSE,
+            Permission.READABLE | Permission.WRITEABLE
+          );
+          await this._peripheral.startAdvertising();
+          this._advertising = true;
+          if (APP_CONFIG.DEBUG_MODE) {
+            console.log('[BlePeripheralService] advertising as', name);
+          }
+          resolve();
+        } catch (e) {
+          console.warn('[BlePeripheralService] startAdvertising failed', e?.message);
+          reject(e);
+        }
+      });
     });
   }
 

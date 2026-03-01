@@ -3,8 +3,8 @@
  * Initializes services, registration retry, BLE scan. Server pushes alerts to client.
  */
 
-import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, Alert } from 'react-native';
 import { alertService } from './src/services/alertService';
 import { bluetoothService } from './src/services/bluetoothService';
 import { apiService } from './src/services/apiService';
@@ -24,8 +24,12 @@ export default function App() {
   const [bleDevices, setBleDevices] = useState([]);
   const [bleAdvertising, setBleAdvertising] = useState(false);
   const [view, setView] = useState('alerts');
+  const [pingSending, setPingSending] = useState(false);
+  const [pingSent, setPingSent] = useState(0);
+  const [pingsReceived, setPingsReceived] = useState([]);
   const registrationIntervalRef = useRef(null);
   const statsIntervalRef = useRef(null);
+  const pingsReceivedRef = useRef([]);
 
   useEffect(() => {
     let mounted = true;
@@ -47,20 +51,6 @@ export default function App() {
         alertService.onBroadcast((alert) => {
           if (APP_CONFIG.DEBUG_MODE) {
             console.log('[App] Alert broadcast', alert.id);
-          }
-        });
-
-        bluetoothService.startScanning((device) => {
-          if (APP_CONFIG.DEBUG_MODE) {
-            console.log('[App] BLE device found', device.name, device.id);
-          }
-          if (!bluetoothService.isDeviceConnected(device.id)) {
-            bluetoothService.connectToDevice(device).then(() => {
-              if (mounted) setBleDevices(bluetoothService.getConnectedDevices());
-              if (APP_CONFIG.DEBUG_MODE) {
-                console.log('[App] BLE connected to', device.name || device.id);
-              }
-            }).catch(() => {});
           }
         });
 
@@ -107,6 +97,13 @@ export default function App() {
         const advertiseName = `${BLE_CONFIG.DEVICE_NAME_PREFIX}-${shortId || 'local'}`;
         await blePeripheralService.start(advertiseName, async (data) => {
           try {
+            if (data && data._type === 'ping') {
+              console.log(`[App] PING received: ${data.seq}/${data.total} from ${data.sender}`);
+              const entry = { seq: data.seq, total: data.total, sender: data.sender, ts: Date.now() };
+              pingsReceivedRef.current = [...pingsReceivedRef.current.slice(-19), entry];
+              if (mounted) setPingsReceived([...pingsReceivedRef.current]);
+              return;
+            }
             await alertService.processAlert(data, ALERT_SOURCE_BLUETOOTH);
             if (mounted) {
               const alerts = await alertService.getLocalAlerts(20);
@@ -118,8 +115,25 @@ export default function App() {
         });
         if (mounted) setBleAdvertising(blePeripheralService.isAdvertising());
 
+        // Start scanning AFTER peripheral is set up so other devices
+        // don't connect before our GATT service is ready
+        bluetoothService.startScanning((device) => {
+          if (APP_CONFIG.DEBUG_MODE) {
+            console.log('[App] BLE device found', device.name, device.id);
+          }
+          if (!bluetoothService.isDeviceConnected(device.id)) {
+            bluetoothService.connectToDevice(device).then(() => {
+              if (mounted) setBleDevices(bluetoothService.getConnectedDevices());
+              if (APP_CONFIG.DEBUG_MODE) {
+                console.log('[App] BLE connected to', device.name || device.id);
+              }
+            }).catch(() => {});
+          }
+        });
+
         statsIntervalRef.current = setInterval(async () => {
           if (!mounted) return;
+          bluetoothService.restartScanning();
           const s = await alertService.getStatistics();
           setStats(s);
           const alerts = await alertService.getLocalAlerts(20);
@@ -171,6 +185,39 @@ export default function App() {
     setLocalAlerts(updated);
   };
 
+  const sendPing = async () => {
+    const devices = bluetoothService.getConnectedDevices();
+    if (devices.length === 0) {
+      Alert.alert('No devices', 'No BLE devices connected to ping.');
+      return;
+    }
+    setPingSending(true);
+    setPingSent(0);
+    const total = 10;
+    let sent = 0;
+    console.log(`[App] PING START: sending ${total} pings to ${devices.length} device(s)`);
+    for (let i = 1; i <= total; i++) {
+      const ping = { _type: 'ping', seq: i, total, sender: status, ts: Date.now() };
+      try {
+        await bluetoothService.broadcastAlert(ping);
+        sent++;
+        setPingSent(i);
+        console.log(`[App] PING SENT: ${i}/${total}`);
+      } catch (e) {
+        console.warn(`[App] PING FAILED: ${i}/${total}`, e?.message);
+      }
+      if (i < total) await new Promise((r) => setTimeout(r, 300));
+    }
+    setPingSending(false);
+    console.log(`[App] PING DONE: ${sent}/${total} sent to ${devices.length} device(s)`);
+    Alert.alert('Ping complete', `Sent ${sent}/${total} pings to ${devices.length} device(s).`);
+  };
+
+  const clearPings = useCallback(() => {
+    pingsReceivedRef.current = [];
+    setPingsReceived([]);
+  }, []);
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Sift</Text>
@@ -212,9 +259,37 @@ export default function App() {
           <Text style={[styles.tabText, view === 'map' && styles.tabTextActive]}>Map</Text>
         </Pressable>
       </View>
-      <Pressable style={styles.fakeButton} onPress={sendFakeAlerts}>
-        <Text style={styles.fakeButtonText}>Send fake alerts</Text>
-      </Pressable>
+      <View style={styles.buttonRow}>
+        <Pressable style={styles.fakeButton} onPress={sendFakeAlerts}>
+          <Text style={styles.fakeButtonText}>Send fake alerts</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.fakeButton, styles.pingButton, pingSending && styles.pingButtonActive]}
+          onPress={sendPing}
+          disabled={pingSending}
+        >
+          <Text style={styles.fakeButtonText}>
+            {pingSending ? `Pinging ${pingSent}/10…` : 'Ping (10x)'}
+          </Text>
+        </Pressable>
+      </View>
+      {pingsReceived.length > 0 && (
+        <View style={styles.pingBanner}>
+          <View style={styles.pingBannerHeader}>
+            <Text style={styles.pingBannerTitle}>
+              Pings received: {pingsReceived.length}
+            </Text>
+            <Pressable onPress={clearPings}>
+              <Text style={styles.pingClear}>Clear</Text>
+            </Pressable>
+          </View>
+          {pingsReceived.slice(-5).reverse().map((p, i) => (
+            <Text key={`${p.ts}-${p.seq}`} style={styles.pingEntry}>
+              #{p.seq}/{p.total} from {p.sender}
+            </Text>
+          ))}
+        </View>
+      )}
       {view === 'alerts' && (
         <>
           <Text style={styles.sectionTitle}>Recent alerts</Text>
@@ -312,9 +387,13 @@ const styles = StyleSheet.create({
     color: '#ccc',
     marginLeft: 4,
   },
-  fakeButton: {
-    alignSelf: 'center',
+  buttonRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 10,
     marginBottom: 16,
+  },
+  fakeButton: {
     paddingVertical: 10,
     paddingHorizontal: 20,
     backgroundColor: '#16213e',
@@ -322,9 +401,44 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#4a6fa5',
   },
+  pingButton: {
+    borderColor: '#5a5',
+  },
+  pingButtonActive: {
+    backgroundColor: '#1a3a1a',
+  },
   fakeButtonText: {
     fontSize: 14,
     color: '#8af',
+  },
+  pingBanner: {
+    marginBottom: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#1a3322',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#3a7a3a',
+  },
+  pingBannerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  pingBannerTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6d6',
+  },
+  pingClear: {
+    fontSize: 12,
+    color: '#888',
+  },
+  pingEntry: {
+    fontSize: 12,
+    color: '#ada',
+    marginLeft: 4,
   },
   sectionTitle: {
     fontSize: 16,
