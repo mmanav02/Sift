@@ -51,6 +51,16 @@ export const POLLING_CONFIG = {
   MAX_RETRIES: 3,
 };
 
+export const REGISTRATION_INTERVAL_MS = 60000;
+
+export const WEBSOCKET_CONFIG = {
+  PATH: '/ws',
+  RECONNECT_DELAY_MS: 5000,
+};
+
+export const ALERT_SOURCE_SERVER = 'server';
+export const ALERT_SOURCE_BLUETOOTH = 'bluetooth';
+
 export const APP_CONFIG = {
   CENTRAL_SERVER_URL: 'https://api.example.com',
   VERSION: '1.0.0',

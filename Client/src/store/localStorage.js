@@ -4,6 +4,7 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { v4 as uuid } from 'uuid';
 import { STORAGE_KEYS, STORAGE_LIMITS } from '../config/constants.js';
 
 const {
@@ -112,5 +113,13 @@ export const LocalStorageService = {
     } catch (e) {
       console.warn('[LocalStorage] updateSettings failed', e);
     }
+  },
+
+  async getDeviceId() {
+    const settings = await this.getSettings();
+    if (settings.deviceId) return settings.deviceId;
+    const deviceId = uuid();
+    await this.updateSettings({ deviceId });
+    return deviceId;
   },
 };

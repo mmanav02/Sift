@@ -1,5 +1,6 @@
 /**
- * HTTP client for central server: health, fetch alerts, create alert, types.
+ * HTTP client for central server: health, fetch alerts, types.
+ * Alerts are received via server broadcast; client does not create alerts.
  */
 
 import axios from 'axios';
@@ -18,6 +19,16 @@ class ApiService {
 
   setServerURL(url) {
     this._client.defaults.baseURL = url || defaultBaseURL;
+  }
+
+  async registerDevice(deviceId) {
+    try {
+      await this._client.post('/api/register', { deviceId });
+      return true;
+    } catch (e) {
+      console.warn('[ApiService] registerDevice failed', e?.message);
+      return false;
+    }
   }
 
   async healthCheck() {
@@ -72,16 +83,6 @@ class ApiService {
       return data ?? null;
     } catch (e) {
       console.warn('[ApiService] getAlertById failed', e?.message);
-      return null;
-    }
-  }
-
-  async createAlert(alertData) {
-    try {
-      const { data } = await this._client.post('/api/alerts', alertData);
-      return data ?? null;
-    } catch (e) {
-      console.warn('[ApiService] createAlert failed', e?.message);
       return null;
     }
   }

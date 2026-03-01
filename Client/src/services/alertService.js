@@ -21,7 +21,7 @@ class AlertService {
 
   /**
    * @param {object|AlertMessage} alert - Alert data (id required)
-   * @param {string} source - e.g. 'server' | 'bluetooth'
+   * @param {string} source - ALERT_SOURCE_SERVER | ALERT_SOURCE_BLUETOOTH
    * @returns {Promise<boolean>} true if accepted and processed, false if duplicate/invalid
    */
   async processAlert(alert, source) {

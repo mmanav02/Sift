@@ -3,9 +3,22 @@
  * Refine with your instructions as needed.
  */
 
-import { ALERT_TYPES, SEVERITY_LEVELS } from '../config/constants.js';
+import {
+  ALERT_TYPES,
+  SEVERITY_LEVELS,
+  ALERT_SOURCE_SERVER,
+  ALERT_SOURCE_BLUETOOTH,
+} from '../config/constants.js';
 
-export { ALERT_TYPES, SEVERITY_LEVELS };
+export { ALERT_TYPES, SEVERITY_LEVELS, ALERT_SOURCE_SERVER, ALERT_SOURCE_BLUETOOTH };
+
+export function isFromServer(alert) {
+  return alert?.receivedVia === ALERT_SOURCE_SERVER;
+}
+
+export function isFromBluetooth(alert) {
+  return alert?.receivedVia === ALERT_SOURCE_BLUETOOTH;
+}
 
 export class AlertMessage {
   constructor({
