@@ -32,3 +32,13 @@ server/data/users.json
 # OS
 .DS_Store
 Thumbs.db
+node_modules
+
+# Android
+Client/android/.gradle/
+Client/android/build/
+Client/android/app/build/
+Client/android/app/.cxx/
+Client/android/local.properties
+*.iml
+.DS_Store
