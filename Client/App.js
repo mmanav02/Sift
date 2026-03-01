@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
+  TextInput,
   StyleSheet,
   ScrollView,
   Pressable,
@@ -10,6 +11,8 @@ import {
   StatusBar,
   Modal,
   RefreshControl,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { alertService } from './src/services/alertService';
 import { bluetoothService } from './src/services/bluetoothService';
@@ -27,7 +30,9 @@ import {
   BLE_CONFIG,
   SEVERITY_COLORS,
   MANUAL_POLL_HOURS,
+  STORAGE_LIMITS,
 } from './src/config/constants';
+import { v4 as uuid } from 'uuid';
 import AlertsMap from './src/components/AlertsMap';
 import { blePeripheralService } from './src/services/blePeripheralService';
 
@@ -50,6 +55,7 @@ const TABS = [
   { key: 'alerts', label: 'Alerts', icon: '🔔' },
   { key: 'map', label: 'Map', icon: '🗺️' },
   { key: 'network', label: 'Network', icon: '📡' },
+  { key: 'messages', label: 'Messages', icon: '💬' },
 ];
 
 function getSeverityColor(severity) {
@@ -93,8 +99,12 @@ export default function App() {
   const [pingsReceived, setPingsReceived] = useState([]);
   const [refreshingFromServer, setRefreshingFromServer] = useState(false);
   const [pollError, setPollError] = useState(null);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState('');
   const statsIntervalRef = useRef(null);
   const pingsReceivedRef = useRef([]);
+  const chatMessageIdsRef = useRef(new Set());
+  const senderIdentityRef = useRef(null);
 
   const refreshAlertsFromServer = useCallback(async () => {
     const serverUrl = (APP_CONFIG.CENTRAL_SERVER_URL || '').trim().toLowerCase();
@@ -169,20 +179,39 @@ export default function App() {
           await alertService.processAlert(alert, ALERT_SOURCE_SERVER);
         });
 
+        const deviceId = await LocalStorageService.getDeviceId();
+        const shortId = (deviceId || '').replace(/-/g, '').slice(0, 8);
+        const advertiseName = `${BLE_CONFIG.DEVICE_NAME_PREFIX}-${shortId || 'local'}`;
+        senderIdentityRef.current = advertiseName;
+        const loadedChat = await LocalStorageService.getChatMessages(STORAGE_LIMITS.MAX_CHAT_MESSAGES);
+        loadedChat.forEach((m) => chatMessageIdsRef.current.add(m.id));
+        if (mounted) setChatMessages(loadedChat.reverse());
+
         bluetoothService.listenForAlerts(async (payload) => {
           try {
             const data = typeof payload === 'string' ? JSON.parse(payload) : payload;
+            if (data && data._type === 'chat') {
+              await onChatMessage(data);
+              return;
+            }
+            if (data && data._type === 'ping') {
+              const entry = { seq: data.seq, total: data.total, sender: data.sender, ts: Date.now() };
+              pingsReceivedRef.current = [...pingsReceivedRef.current.slice(-19), entry];
+              if (mounted) setPingsReceived([...pingsReceivedRef.current]);
+              return;
+            }
             await alertService.processAlert(data, ALERT_SOURCE_BLUETOOTH);
           } catch (e) {
             console.warn('[App] BLE alert parse failed', e?.message);
           }
         });
 
-        const deviceId = await LocalStorageService.getDeviceId();
-        const shortId = (deviceId || '').replace(/-/g, '').slice(0, 8);
-        const advertiseName = `${BLE_CONFIG.DEVICE_NAME_PREFIX}-${shortId || 'local'}`;
         await blePeripheralService.start(advertiseName, async (data) => {
           try {
+            if (data && data._type === 'chat') {
+              await onChatMessage(data);
+              return;
+            }
             if (data && data._type === 'ping') {
               console.log(`[App] PING received: ${data.seq}/${data.total} from ${data.sender}`);
               const entry = { seq: data.seq, total: data.total, sender: data.sender, ts: Date.now() };
@@ -302,6 +331,49 @@ export default function App() {
     pingsReceivedRef.current = [];
     setPingsReceived([]);
   }, []);
+
+  const onChatMessage = useCallback(async (data) => {
+    if (!data || data._type !== 'chat' || !data.id) return;
+    if (chatMessageIdsRef.current.has(data.id)) return;
+    chatMessageIdsRef.current.add(data.id);
+    const msg = {
+      id: data.id,
+      text: data.text || '',
+      sender: data.sender || 'Unknown',
+      ts: data.ts || Date.now(),
+    };
+    await LocalStorageService.appendChatMessage(msg);
+    setChatMessages((prev) => [...prev, msg].sort((a, b) => a.ts - b.ts));
+  }, []);
+
+  const sendChatMessage = useCallback(async () => {
+    const text = (chatInput || '').trim();
+    if (!text) return;
+    const devices = bluetoothService.getConnectedDevices();
+    if (devices.length === 0) {
+      Alert.alert('No peers', 'No BLE devices connected. Connect to peers to send messages.');
+      return;
+    }
+    const sender = senderIdentityRef.current || BLE_CONFIG.DEVICE_NAME_PREFIX;
+    const payload = {
+      _type: 'chat',
+      id: uuid(),
+      text,
+      sender,
+      ts: Date.now(),
+    };
+    try {
+      await bluetoothService.broadcastAlert(payload);
+      const msg = { id: payload.id, text: payload.text, sender: payload.sender, ts: payload.ts };
+      chatMessageIdsRef.current.add(msg.id);
+      await LocalStorageService.appendChatMessage(msg);
+      setChatMessages((prev) => [...prev, msg].sort((a, b) => a.ts - b.ts));
+      setChatInput('');
+    } catch (e) {
+      console.warn('[App] sendChatMessage failed', e?.message);
+      Alert.alert('Send failed', e?.message || 'Could not send message.');
+    }
+  }, [chatInput]);
 
   const alertLocation = (alert) =>
     [alert.city, alert.state, alert.country].filter(Boolean).join(', ') || '—';
@@ -497,6 +569,67 @@ export default function App() {
               </Pressable>
             </View>
           </ScrollView>
+        )}
+
+        {view === 'messages' && (
+          <KeyboardAvoidingView
+            style={styles.messagesContainer}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+          >
+            <ScrollView
+              style={styles.chatList}
+              contentContainerStyle={styles.chatListContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {bleDevices.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyIcon}>💬</Text>
+                  <Text style={styles.emptyTitle}>No peers connected</Text>
+                  <Text style={styles.emptySubtitle}>
+                    Messages from nearby devices will appear here. Connect via the Network tab.
+                  </Text>
+                </View>
+              ) : chatMessages.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyIcon}>💬</Text>
+                  <Text style={styles.emptyTitle}>No messages yet</Text>
+                  <Text style={styles.emptySubtitle}>
+                    Send a message below; replies from peers will show here.
+                  </Text>
+                </View>
+              ) : (
+                chatMessages.map((msg) => (
+                  <View key={msg.id} style={styles.chatMessageCard}>
+                    <View style={styles.chatMessageHeader}>
+                      <Text style={styles.chatMessageSender}>{msg.sender}</Text>
+                      <Text style={styles.chatMessageTime}>{formatTime(msg.ts)}</Text>
+                    </View>
+                    <Text style={styles.chatMessageText}>{msg.text}</Text>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+            <View style={styles.chatInputRow}>
+              <TextInput
+                style={styles.chatInput}
+                placeholder="Type a message…"
+                placeholderTextColor={C.textMuted}
+                value={chatInput}
+                onChangeText={setChatInput}
+                multiline
+                maxLength={500}
+                editable
+              />
+              <Pressable
+                style={[styles.chatSendButton, (!chatInput || !chatInput.trim()) && styles.chatSendButtonDisabled]}
+                onPress={sendChatMessage}
+                disabled={!chatInput || !chatInput.trim()}
+              >
+                <Text style={styles.chatSendButtonText}>Send</Text>
+              </Pressable>
+            </View>
+          </KeyboardAvoidingView>
         )}
       </View>
 
@@ -836,6 +969,77 @@ const styles = StyleSheet.create({
   },
   clearText: { fontSize: 12, color: C.textMuted },
   pingItem: { fontSize: 12, color: C.textSecondary, marginTop: 4, marginLeft: 4 },
+  messagesContainer: { flex: 1 },
+  chatList: { flex: 1 },
+  chatListContent: { padding: 16, paddingBottom: 12 },
+  chatMessageCard: {
+    backgroundColor: C.card,
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  chatMessageHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  chatMessageSender: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: C.accent,
+  },
+  chatMessageTime: {
+    fontSize: 11,
+    color: C.textMuted,
+  },
+  chatMessageText: {
+    fontSize: 14,
+    color: C.textPrimary,
+    lineHeight: 20,
+  },
+  chatInputRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 10,
+    padding: 12,
+    paddingBottom: 16,
+    borderTopWidth: 1,
+    borderTopColor: C.border,
+    backgroundColor: C.surface,
+  },
+  chatInput: {
+    flex: 1,
+    minHeight: 40,
+    maxHeight: 100,
+    backgroundColor: C.card,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.border,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: C.textPrimary,
+  },
+  chatSendButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    backgroundColor: C.accent,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  chatSendButtonDisabled: {
+    backgroundColor: C.border,
+    opacity: 0.7,
+  },
+  chatSendButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
+  },
   devLabel: {
     fontSize: 11,
     fontWeight: '600',
