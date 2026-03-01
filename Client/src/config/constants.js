@@ -72,9 +72,9 @@ export const ALERT_SOURCE_BLUETOOTH = 'bluetooth';
 export const PLACEHOLDER_SERVER_URL = 'https://api.example.com';
 
 export const APP_CONFIG = {
-  /** Central server (droplet). Use http for port 8000; use https if behind nginx/SSL. */
-  // CENTRAL_SERVER_URL: 'http://165.245.139.104:8000',
-  CENTRAL_SERVER_URL: 'https://ae6c-129-210-115-231.ngrok-free.app',
+  /** Central server (droplet). Use port 8001; ensure UFW allows it and server is running. */
+  CENTRAL_SERVER_URL: 'http://165.245.139.104:8001',
+  // CENTRAL_SERVER_URL: 'https://ae6c-129-210-115-231.ngrok-free.app',
   VERSION: '1.0.0',
   DEBUG_MODE: __DEV__ ?? false,
 };

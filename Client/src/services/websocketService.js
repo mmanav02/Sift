@@ -50,7 +50,6 @@ class WebSocketService {
   }
 
   connect(serverBaseUrl, deviceId = null) {
-    this._intentionalClose = false;
     this._serverBaseUrl = serverBaseUrl || APP_CONFIG.CENTRAL_SERVER_URL;
     this._deviceId = deviceId;
 
@@ -61,17 +60,32 @@ class WebSocketService {
       return;
     }
 
-    const url = getWebSocketUrl(this._serverBaseUrl, deviceId);
+    // Only one connection per client: close existing socket before opening a new one
+    if (this._ws != null) {
+      this._intentionalClose = true;
+      try {
+        this._ws.close();
+      } catch (_) {}
+      this._ws = null;
+    }
 
+    this._intentionalClose = false;
+    const url = getWebSocketUrl(this._serverBaseUrl, deviceId);
+    if (APP_CONFIG.DEBUG_MODE) {
+      console.log('[WebSocketService] connecting to', url);
+    }
+
+    let ws;
     try {
-      this._ws = new WebSocket(url);
+      ws = new WebSocket(url);
+      this._ws = ws;
     } catch (e) {
       console.warn('[WebSocketService] connect failed', e?.message);
       this._scheduleReconnect();
       return;
     }
 
-    this._ws.onopen = () => {
+    ws.onopen = () => {
       if (APP_CONFIG.DEBUG_MODE) {
         console.log('[WebSocketService] connected');
       }
@@ -80,7 +94,7 @@ class WebSocketService {
     };
 
     // Receive-only: server sends alerts; client never sends on this socket.
-    this._ws.onmessage = (event) => {
+    ws.onmessage = (event) => {
       try {
         const raw = event.data;
         if (typeof raw !== 'string') return;
@@ -102,11 +116,13 @@ class WebSocketService {
       }
     };
 
-    this._ws.onerror = (e) => {
+    ws.onerror = (e) => {
       console.warn('[WebSocketService] error', e?.message ?? 'unknown');
     };
 
-    this._ws.onclose = () => {
+    ws.onclose = () => {
+      // Only treat as disconnect if this socket is still the active one (avoid old replaced socket triggering reconnect)
+      if (this._ws !== ws) return;
       this._ws = null;
       if (this._onConnectionChange) this._onConnectionChange(false);
       if (!this._intentionalClose) {

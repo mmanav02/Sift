@@ -27,6 +27,14 @@ class ConnectionManager:
         self._device_by_ws: dict = {}
 
     async def connect(self, ws: WebSocket, device_id: str = ""):
+        # One connection per device: close any existing connections for this device_id (disconnect handler will remove them)
+        if device_id:
+            for old_ws in list(self._connections):
+                if self._device_by_ws.get(id(old_ws)) == device_id:
+                    try:
+                        await old_ws.close()
+                    except Exception:
+                        pass
         await ws.accept()
         self._connections.append(ws)
         if device_id:
