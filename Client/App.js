@@ -8,6 +8,7 @@ import {
   Alert,
   SafeAreaView,
   StatusBar,
+  Modal,
 } from 'react-native';
 import { alertService } from './src/services/alertService';
 import { bluetoothService } from './src/services/bluetoothService';
@@ -84,6 +85,7 @@ export default function App() {
   const [bleAdvertising, setBleAdvertising] = useState(false);
   const [view, setView] = useState('alerts');
   const [mapTheme, setMapTheme] = useState('dark');
+  const [selectedAlert, setSelectedAlert] = useState(null);
   const [pingSending, setPingSending] = useState(false);
   const [pingSent, setPingSent] = useState(0);
   const [pingsReceived, setPingsReceived] = useState([]);
@@ -333,9 +335,10 @@ export default function App() {
                 const icon = getAlertIcon(alert.type);
                 const sevLabel = getSeverityLabel(alert.severity);
                 return (
-                  <View
+                  <Pressable
                     key={alert.id || (alert.created_at || alert.timestamp) + alert.city}
                     style={[styles.alertCard, { borderLeftColor: color }]}
+                    onPress={() => setSelectedAlert(alert)}
                   >
                     <View style={styles.alertCardTop}>
                       <Text style={styles.alertIcon}>{icon}</Text>
@@ -357,7 +360,7 @@ export default function App() {
                         {formatTime(alert.created_at || alert.timestamp)}
                       </Text>
                     </View>
-                  </View>
+                  </Pressable>
                 );
               })
             )}
@@ -459,6 +462,69 @@ export default function App() {
           </ScrollView>
         )}
       </View>
+
+      {/* Alert Detail Modal */}
+      <Modal
+        visible={!!selectedAlert}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSelectedAlert(null)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setSelectedAlert(null)}>
+          <Pressable style={styles.modalSheet} onPress={() => {}}>
+            {selectedAlert && (() => {
+              const color = getSeverityColor(selectedAlert.severity);
+              const icon = getAlertIcon(selectedAlert.type);
+              const sevLabel = getSeverityLabel(selectedAlert.severity);
+              return (
+                <>
+                  <View style={styles.modalHandle} />
+                  <View style={[styles.modalHeader, { borderLeftColor: color, borderLeftWidth: 4 }]}>
+                    <Text style={styles.modalIcon}>{icon}</Text>
+                    <Text style={styles.modalTitle}>{selectedAlert.title || selectedAlert.type || 'Alert'}</Text>
+                  </View>
+
+                  <View style={styles.modalRow}>
+                    <Text style={styles.modalLabel}>Severity</Text>
+                    <Text style={[styles.modalBadge, { color, borderColor: color }]}>{sevLabel}</Text>
+                  </View>
+                  <View style={styles.modalRow}>
+                    <Text style={styles.modalLabel}>Type</Text>
+                    <Text style={styles.modalValue}>{selectedAlert.type || '—'}</Text>
+                  </View>
+                  <View style={styles.modalRow}>
+                    <Text style={styles.modalLabel}>Source</Text>
+                    <Text style={styles.modalValue}>{isFromServer(selectedAlert) ? '🌐 Server' : '📶 BLE'}</Text>
+                  </View>
+                  <View style={styles.modalRow}>
+                    <Text style={styles.modalLabel}>Location</Text>
+                    <Text style={styles.modalValue}>
+                      {[selectedAlert.city, selectedAlert.state, selectedAlert.country].filter(Boolean).join(', ') || '—'}
+                    </Text>
+                  </View>
+                  <View style={styles.modalRow}>
+                    <Text style={styles.modalLabel}>Time</Text>
+                    <Text style={styles.modalValue}>{formatTime(selectedAlert.created_at || selectedAlert.timestamp)}</Text>
+                  </View>
+                  {selectedAlert.description ? (
+                    <View style={styles.modalDescBox}>
+                      <Text style={styles.modalLabel}>Description</Text>
+                      <Text style={styles.modalDesc}>{selectedAlert.description}</Text>
+                    </View>
+                  ) : null}
+
+                  <Pressable
+                    style={styles.modalMapBtn}
+                    onPress={() => { setSelectedAlert(null); setView('map'); }}
+                  >
+                    <Text style={styles.modalMapBtnText}>🗺️ View on Map</Text>
+                  </Pressable>
+                </>
+              );
+            })()}
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <View style={styles.tabBar}>
         {TABS.map((tab) => (
@@ -750,6 +816,96 @@ const styles = StyleSheet.create({
   },
   devButtonActive: { backgroundColor: '#0d1f0d', borderColor: '#2e5a2e' },
   devButtonText: { fontSize: 13, color: C.textSecondary },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: C.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    paddingBottom: 36,
+    borderTopWidth: 1,
+    borderColor: C.border,
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: C.border,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingLeft: 10,
+    marginBottom: 20,
+  },
+  modalIcon: { fontSize: 28 },
+  modalTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '700',
+    color: C.textPrimary,
+    lineHeight: 22,
+  },
+  modalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+  },
+  modalLabel: {
+    fontSize: 12,
+    color: C.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    fontWeight: '600',
+  },
+  modalValue: {
+    fontSize: 14,
+    color: C.textPrimary,
+    maxWidth: '60%',
+    textAlign: 'right',
+  },
+  modalBadge: {
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  modalDescBox: {
+    marginTop: 16,
+    gap: 6,
+  },
+  modalDesc: {
+    fontSize: 14,
+    color: C.textSecondary,
+    lineHeight: 20,
+    marginTop: 6,
+  },
+  modalMapBtn: {
+    marginTop: 24,
+    backgroundColor: C.accent,
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  modalMapBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#fff',
+  },
   tabBar: {
     flexDirection: 'row',
     backgroundColor: C.surface,
