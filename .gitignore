@@ -1,3 +1,37 @@
+.claude/
+docs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Environment variables
+.env
+
+# Runtime data
+server/data/alerts.json
+server/data/users.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
 node_modules
 
 # Android
@@ -8,10 +42,3 @@ Client/android/app/.cxx/
 Client/android/local.properties
 *.iml
 .DS_Store
-
-# iOS (when you add it)
-Client/ios/build/
-Client/ios/Pods/
-Client/ios/*.xcworkspace/xcuserdata/
-Client/ios/*.xcodeproj/xcuserdata/
-Client/ios/*.xcodeproj/project.xcworkspace/xcuserdata/
