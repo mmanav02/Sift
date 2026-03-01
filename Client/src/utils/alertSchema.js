@@ -6,21 +6,15 @@
 
 import {
   ALERT_TYPES,
-  SEVERITY_LEVELS,
   ALERT_SOURCE_SERVER,
   ALERT_SOURCE_BLUETOOTH,
 } from '../config/constants.js';
 
-export { ALERT_TYPES, SEVERITY_LEVELS, ALERT_SOURCE_SERVER, ALERT_SOURCE_BLUETOOTH };
+export { ALERT_TYPES, ALERT_SOURCE_SERVER, ALERT_SOURCE_BLUETOOTH };
 
 export function isFromServer(alert) {
   const src = alert?.source ?? alert?.receivedVia;
   return src === ALERT_SOURCE_SERVER;
-}
-
-export function isFromBluetooth(alert) {
-  const src = alert?.source ?? alert?.receivedVia;
-  return src === ALERT_SOURCE_BLUETOOTH;
 }
 
 export class AlertMessage {

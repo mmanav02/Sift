@@ -59,19 +59,6 @@ class AlertService {
     return LocalStorageService.getLocalAlerts(limit);
   }
 
-  async isDuplicate(id) {
-    return LocalStorageService.isMessageDuplicate(id);
-  }
-
-  async getReceivedAlertCount() {
-    const ids = await LocalStorageService.getReceivedMessageIds();
-    return ids.length;
-  }
-
-  async clearAllAlerts() {
-    await LocalStorageService.clearAllData();
-  }
-
   async getStatistics() {
     const ids = await LocalStorageService.getReceivedMessageIds();
     const alerts = await LocalStorageService.getLocalAlerts(STORAGE_LIMITS.MAX_LOCAL_ALERTS);

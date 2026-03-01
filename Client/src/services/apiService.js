@@ -1,6 +1,6 @@
 /**
- * HTTP client for central server: health, fetch alerts, types.
- * Alerts are received via server broadcast; client does not create alerts.
+ * HTTP client for central server: device registration.
+ * Alerts are received via server broadcast (WebSocket); client does not fetch or create alerts.
  */
 
 import axios from 'axios';
@@ -17,10 +17,6 @@ class ApiService {
     });
   }
 
-  setServerURL(url) {
-    this._client.defaults.baseURL = url || defaultBaseURL;
-  }
-
   async registerDevice(deviceId) {
     try {
       await this._client.post('/api/register', { deviceId });
@@ -28,72 +24,6 @@ class ApiService {
     } catch (e) {
       console.warn('[ApiService] registerDevice failed', e?.message);
       return false;
-    }
-  }
-
-  async healthCheck() {
-    try {
-      const { data } = await this._client.get('/health');
-      return data;
-    } catch (e) {
-      console.warn('[ApiService] healthCheck failed', e?.message);
-      return null;
-    }
-  }
-
-  async fetchAlerts(limit = 20, offsetTime = null) {
-    try {
-      const params = { limit };
-      if (offsetTime != null) params.offsetTime = offsetTime;
-      const { data } = await this._client.get('/api/alerts', { params });
-      return Array.isArray(data) ? data : (data?.alerts ?? []);
-    } catch (e) {
-      console.warn('[ApiService] fetchAlerts failed', e?.message);
-      return [];
-    }
-  }
-
-  async fetchAlertsByCity(city, limit = 20) {
-    try {
-      const { data } = await this._client.get('/api/alerts', {
-        params: { city, limit },
-      });
-      return Array.isArray(data) ? data : (data?.alerts ?? []);
-    } catch (e) {
-      console.warn('[ApiService] fetchAlertsByCity failed', e?.message);
-      return [];
-    }
-  }
-
-  async fetchAlertsByZipcode(zipcode, limit = 20) {
-    try {
-      const { data } = await this._client.get('/api/alerts', {
-        params: { zipcode, limit },
-      });
-      return Array.isArray(data) ? data : (data?.alerts ?? []);
-    } catch (e) {
-      console.warn('[ApiService] fetchAlertsByZipcode failed', e?.message);
-      return [];
-    }
-  }
-
-  async getAlertById(alertId) {
-    try {
-      const { data } = await this._client.get(`/api/alerts/${encodeURIComponent(alertId)}`);
-      return data ?? null;
-    } catch (e) {
-      console.warn('[ApiService] getAlertById failed', e?.message);
-      return null;
-    }
-  }
-
-  async getAlertTypes() {
-    try {
-      const { data } = await this._client.get('/api/alerts/types/list');
-      return Array.isArray(data) ? data : (data?.types ?? []);
-    } catch (e) {
-      console.warn('[ApiService] getAlertTypes failed', e?.message);
-      return [];
     }
   }
 }

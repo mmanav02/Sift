@@ -4,7 +4,7 @@
  */
 
 import { v4 as uuid } from 'uuid';
-import { ALERT_TYPES, ALERT_SOURCE_BLUETOOTH } from '../config/constants.js';
+import { ALERT_TYPES } from '../config/constants.js';
 
 const MOCK_CITIES = [
   { city: 'San Jose', state: 'CA', country: 'USA', lat: 37.3382, lng: -121.8863, zipcode: '95112' },
@@ -38,23 +38,4 @@ export function generateMockAlert(overrides = {}) {
     active: true,
     ...overrides,
   };
-}
-
-export function generateMockAlerts(count) {
-  return Array.from({ length: count }, () => generateMockAlert());
-}
-
-export function simulateServerPoll(count = 5, delayMs = 500) {
-  return new Promise((resolve) => {
-    setTimeout(() => resolve(generateMockAlerts(count)), delayMs);
-  });
-}
-
-export function simulateBluetoothReceive(delayMs = 800) {
-  return new Promise((resolve) => {
-    setTimeout(
-      () => resolve(generateMockAlert({ source: ALERT_SOURCE_BLUETOOTH })),
-      delayMs
-    );
-  });
 }

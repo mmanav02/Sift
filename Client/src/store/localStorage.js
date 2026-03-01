@@ -88,14 +88,6 @@ export const LocalStorageService = {
     }
   },
 
-  async clearAllData() {
-    try {
-      await AsyncStorage.multiRemove([RECEIVED_MESSAGE_IDS, LOCAL_ALERTS]);
-    } catch (e) {
-      console.warn('[LocalStorage] clearAllData failed', e);
-    }
-  },
-
   async getSettings() {
     try {
       const raw = await AsyncStorage.getItem(SETTINGS);
