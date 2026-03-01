@@ -1,14 +1,8 @@
-/**
- * Map showing alert locations as pins and circles.
- * Uses WebView + Leaflet (no native maps module) so it builds on RN 0.76.
- * Requires network for tile loading unless MAP_TILE_PATH is set to local tiles.
- */
-
 import React, { useEffect, useState, useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { alertService } from '../services/alertService';
-import { MAP_CONFIG, STORAGE_LIMITS } from '../config/constants';
+import { MAP_CONFIG, STORAGE_LIMITS, SEVERITY_COLORS } from '../config/constants';
 
 function hasValidCoords(alert) {
   const lat = alert?.lat ?? alert?.latitude;
@@ -25,15 +19,37 @@ function isActive(alert) {
   return alert?.active !== false;
 }
 
-function buildMapHTML(centerLat, centerLng, zoom, alerts, circleRadiusM) {
+function severityColor(severity) {
+  if (!severity) return SEVERITY_COLORS.info;
+  const key = String(severity).toLowerCase();
+  if (SEVERITY_COLORS[key]) return SEVERITY_COLORS[key];
+  const n = Number(severity);
+  if (n >= 9) return SEVERITY_COLORS.critical;
+  if (n >= 7) return SEVERITY_COLORS.high;
+  if (n >= 4) return SEVERITY_COLORS.medium;
+  return SEVERITY_COLORS.low;
+}
+
+function buildMapHTML(centerLat, centerLng, zoom, alerts, circleRadiusM, theme) {
   const points = (alerts || []).map((a) => ({
     lat: a.lat ?? a.latitude,
     lng: a.lng ?? a.longitude ?? a.long,
     title: a.title || a.type || 'Alert',
-    desc: a.description || a.city || '',
+    desc: [a.city, a.state, a.country].filter(Boolean).join(', ') || a.description || '',
+    color: severityColor(a.severity),
+    severity: a.severity ? String(a.severity) : '',
   }));
   const pointsEscaped = JSON.stringify(points).replace(/</g, '\\u003c');
-  const radius = circleRadiusM || 1000;
+  const radius = circleRadiusM || 15000;
+  const isDark = theme !== 'light';
+  const tileUrl = isDark
+    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+    : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+  const bodyBg = isDark ? '#0a0a14' : '#f4f4f8';
+  const popupBg = isDark ? '#1a1a2e' : '#ffffff';
+  const popupBorder = isDark ? '#2e2e4e' : '#ddddee';
+  const popupText = isDark ? '#f0f0f8' : '#111122';
+  const popupSmall = isDark ? '#8888aa' : '#666688';
 
   return `<!DOCTYPE html>
 <html>
@@ -42,8 +58,12 @@ function buildMapHTML(centerLat, centerLng, zoom, alerts, circleRadiusM) {
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>
   <style>
-    body { margin: 0; background: #1a1a2e; }
+    body { margin: 0; background: ${bodyBg}; }
     #map { width: 100%; height: 100vh; }
+    .leaflet-popup-content-wrapper { background: ${popupBg}; color: ${popupText}; border: 1px solid ${popupBorder}; border-radius: 8px; }
+    .leaflet-popup-tip { background: ${popupBg}; }
+    .leaflet-popup-content b { color: ${popupText}; }
+    .leaflet-popup-content small { color: ${popupSmall}; }
   </style>
 </head>
 <body>
@@ -53,26 +73,36 @@ function buildMapHTML(centerLat, centerLng, zoom, alerts, circleRadiusM) {
     var zoom = ${zoom};
     var points = ${pointsEscaped};
     var radiusM = ${radius};
-    var map = L.map('map').setView(center, zoom);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap'
+    var map = L.map('map', { zoomControl: true }).setView(center, zoom);
+    L.tileLayer('${tileUrl}', {
+      attribution: '&copy; OpenStreetMap &copy; CARTO',
+      subdomains: 'abcd',
+      maxZoom: 19
     }).addTo(map);
     var bounds = null;
     for (var i = 0; i < points.length; i++) {
       var p = points[i];
       var latlng = [p.lat, p.lng];
-      L.circle(latlng, { radius: radiusM, color: 'rgba(200,80,80,0.6)', fillColor: 'rgba(200,80,80,0.15)', fillOpacity: 1, weight: 2 }).addTo(map);
-      L.marker(latlng).addTo(map).bindPopup('<b>' + (p.title || 'Alert') + '<\/b><br>' + (p.desc || ''));
+      var c = p.color || '#4a9eff';
+      L.circle(latlng, { radius: radiusM, color: c, fillColor: c, fillOpacity: 0.12, weight: 1.5, opacity: 0.7 }).addTo(map);
+      var dotIcon = L.divIcon({
+        className: '',
+        html: '<div style="width:12px;height:12px;border-radius:50%;background:' + c + ';border:2px solid rgba(255,255,255,0.6);box-shadow:0 0 8px ' + c + ';"><\/div>',
+        iconSize: [12, 12],
+        iconAnchor: [6, 6],
+      });
+      L.marker(latlng, { icon: dotIcon }).addTo(map)
+        .bindPopup('<b>' + (p.title || 'Alert') + '<\/b>' + (p.desc ? '<br><small>' + p.desc + '<\/small>' : '') + (p.severity ? '<br><small style="color:' + c + '">' + p.severity + '<\/small>' : ''));
       if (!bounds) bounds = L.latLngBounds(latlng, latlng);
       else bounds.extend(latlng);
     }
-    if (bounds && points.length > 0) map.fitBounds(bounds, { padding: [48, 48], maxZoom: 14 });
+    if (bounds && points.length > 0) map.fitBounds(bounds, { padding: [48, 48], maxZoom: 12 });
   </script>
 </body>
 </html>`;
 }
 
-export default function AlertsMap({ alerts: alertsProp, style }) {
+export default function AlertsMap({ alerts: alertsProp, style, theme = 'dark' }) {
   const [alerts, setAlerts] = useState(alertsProp ?? []);
 
   useEffect(() => {
@@ -99,9 +129,10 @@ export default function AlertsMap({ alerts: alertsProp, style }) {
         MAP_CONFIG.DEFAULT_LONGITUDE,
         8,
         mapAlerts,
-        MAP_CONFIG.ALERT_CIRCLE_RADIUS_M
+        MAP_CONFIG.ALERT_CIRCLE_RADIUS_M,
+        theme
       ),
-    [alertsKey]
+    [alertsKey, theme]
   );
 
   return (
@@ -130,17 +161,17 @@ const styles = StyleSheet.create({
   },
   webview: {
     flex: 1,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#0a0a14',
   },
   placeholder: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#0a0a14',
     pointerEvents: 'none',
   },
   placeholderText: {
-    color: '#888',
+    color: '#4a4a6a',
     fontSize: 14,
   },
 });

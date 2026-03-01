@@ -1,8 +1,3 @@
-/**
- * Central configuration for Disaster News Mesh / Sift.
- * Alert types, BLE config, storage keys, polling, and app settings.
- */
-
 export const ALERT_TYPES = [
   'earthquake',
   'flood',
@@ -15,6 +10,14 @@ export const ALERT_TYPES = [
   'drought',
   'other',
 ];
+
+export const SEVERITY_COLORS = {
+  critical: '#ff4757',
+  high: '#ff6b35',
+  medium: '#ffa502',
+  low: '#2ed573',
+  info: '#4a9eff',
+};
 
 export const SEVERITY_LEVELS = {
   CRITICAL: 10,
@@ -61,7 +64,6 @@ export const WEBSOCKET_CONFIG = {
 export const ALERT_SOURCE_SERVER = 'server';
 export const ALERT_SOURCE_BLUETOOTH = 'bluetooth';
 
-/** Placeholder URL: when this is the server URL, WebSocket and registration are skipped to avoid log spam. */
 export const PLACEHOLDER_SERVER_URL = 'https://api.example.com';
 
 export const APP_CONFIG = {
@@ -70,14 +72,11 @@ export const APP_CONFIG = {
   DEBUG_MODE: __DEV__ ?? false,
 };
 
-/** Default map region (e.g. US / California). For offline tiles use MAP_TILE_PATH. */
 export const MAP_CONFIG = {
-  DEFAULT_LATITUDE: 37.3382,
-  DEFAULT_LONGITUDE: -121.8863,
+  DEFAULT_LATITUDE: 20.5937,
+  DEFAULT_LONGITUDE: 78.9629,
   DEFAULT_LATITUDE_DELTA: 4,
   DEFAULT_LONGITUDE_DELTA: 4,
-  /** Radius in meters for alert circle. */
   ALERT_CIRCLE_RADIUS_M: 1000,
-  /** Optional: local tile path for offline map (e.g. file:///.../tiles or asset path). Empty = use default map provider. */
   MAP_TILE_PATH: '',
 };
