@@ -9,6 +9,7 @@ import {
   SafeAreaView,
   StatusBar,
   Modal,
+  RefreshControl,
 } from 'react-native';
 import { alertService } from './src/services/alertService';
 import { bluetoothService } from './src/services/bluetoothService';
@@ -25,6 +26,7 @@ import {
   PLACEHOLDER_SERVER_URL,
   BLE_CONFIG,
   SEVERITY_COLORS,
+  MANUAL_POLL_HOURS,
 } from './src/config/constants';
 import AlertsMap from './src/components/AlertsMap';
 import { blePeripheralService } from './src/services/blePeripheralService';
@@ -89,8 +91,32 @@ export default function App() {
   const [pingSending, setPingSending] = useState(false);
   const [pingSent, setPingSent] = useState(0);
   const [pingsReceived, setPingsReceived] = useState([]);
+  const [refreshingFromServer, setRefreshingFromServer] = useState(false);
+  const [pollError, setPollError] = useState(null);
   const statsIntervalRef = useRef(null);
   const pingsReceivedRef = useRef([]);
+
+  const refreshAlertsFromServer = useCallback(async () => {
+    const serverUrl = (APP_CONFIG.CENTRAL_SERVER_URL || '').trim().toLowerCase();
+    if (!serverUrl || serverUrl === PLACEHOLDER_SERVER_URL.toLowerCase() || serverUrl.includes('api.example.com')) {
+      setPollError('No server configured');
+      return;
+    }
+    setPollError(null);
+    setRefreshingFromServer(true);
+    try {
+      const alerts = await apiService.fetchAlertsFromServer(MANUAL_POLL_HOURS);
+      for (const alert of alerts) {
+        await alertService.processAlert(alert, ALERT_SOURCE_SERVER);
+      }
+      const updated = await alertService.getLocalAlerts(20);
+      setLocalAlerts(updated);
+    } catch (e) {
+      setPollError(e?.message || 'Fetch failed');
+    } finally {
+      setRefreshingFromServer(false);
+    }
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -316,11 +342,21 @@ export default function App() {
 
       <View style={styles.content}>
         {view === 'alerts' && (
-          <ScrollView
-            style={styles.alertList}
-            contentContainerStyle={styles.alertListContent}
-            showsVerticalScrollIndicator={false}
-          >
+          <>
+            <ScrollView
+              style={styles.alertList}
+              contentContainerStyle={styles.alertListContent}
+              showsVerticalScrollIndicator={false}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshingFromServer}
+                  onRefresh={refreshAlertsFromServer}
+                />
+              }
+            >
+            {pollError ? (
+              <Text style={styles.pollErrorText} numberOfLines={1}>{pollError}</Text>
+            ) : null}
             {localAlerts.length === 0 ? (
               <View style={styles.emptyState}>
                 <Text style={styles.emptyIcon}>🔕</Text>
@@ -364,7 +400,8 @@ export default function App() {
                 );
               })
             )}
-          </ScrollView>
+            </ScrollView>
+          </>
         )}
 
         {view === 'map' && (
@@ -638,6 +675,11 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  pollErrorText: {
+    fontSize: 12,
+    color: '#ff6b6b',
+    marginBottom: 8,
   },
   alertList: {
     flex: 1,

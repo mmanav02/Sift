@@ -1,5 +1,6 @@
 import logging
 import random
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 
@@ -52,9 +53,31 @@ logger = logging.getLogger(__name__)
 
 def _alert_to_response(alert: dict) -> dict:
     out = dict(alert)
-    out.setdefault("active",     True)
+    out.setdefault("active", True)
     out.setdefault("updated_at", out.get("created_at"))
+    # Ensure optional response fields exist so AlertResponse validation never fails on missing keys
+    out.setdefault("country", None)
+    out.setdefault("city", None)
+    out.setdefault("state", None)
+    out.setdefault("description", None)
+    out.setdefault("zipcode", None)
+    out.setdefault("relayed_by", None)
+    out.setdefault("hop_count", None)
+    out.setdefault("distance_km", None)
     return out
+
+
+def _parse_created_at(created_at) -> Optional[datetime]:
+    """Parse created_at (ISO string or datetime) to timezone-aware UTC datetime."""
+    if created_at is None:
+        return None
+    if isinstance(created_at, datetime):
+        return created_at if created_at.tzinfo else created_at.replace(tzinfo=timezone.utc)
+    try:
+        dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
 
 
 @router.get("", response_model=list[AlertResponse], response_model_exclude_none=True)
@@ -62,6 +85,7 @@ async def get_alerts(
     type:     Optional[str] = Query(None),
     severity: Optional[str] = Query(None),
     limit:    int           = Query(50, le=200),
+    hours:    Optional[int]  = Query(None, ge=1, le=168),
 ):
     alerts = [a for a in storage.get_all_alerts() if a.get("active", True)]
 
@@ -69,6 +93,15 @@ async def get_alerts(
         alerts = [a for a in alerts if a.get("type") == type]
     if severity:
         alerts = [a for a in alerts if a.get("severity") == severity]
+
+    if hours is not None:
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+        filtered = []
+        for a in alerts:
+            created = _parse_created_at(a.get("created_at"))
+            if created is not None and created >= cutoff:
+                filtered.append(a)
+        alerts = filtered
 
     alerts.sort(key=lambda a: a.get("created_at", ""), reverse=True)
     return [_alert_to_response(a) for a in alerts[:limit]]

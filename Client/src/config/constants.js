@@ -54,6 +54,9 @@ export const POLLING_CONFIG = {
   MAX_RETRIES: 3,
 };
 
+/** Hours window for manual poll (fetch disasters from server). */
+export const MANUAL_POLL_HOURS = 2;
+
 export const REGISTRATION_INTERVAL_MS = 60000;
 
 export const WEBSOCKET_CONFIG = {
