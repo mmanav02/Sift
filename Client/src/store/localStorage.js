@@ -10,12 +10,14 @@ import { STORAGE_KEYS, STORAGE_LIMITS } from '../config/constants.js';
 const {
   RECEIVED_MESSAGE_IDS,
   LOCAL_ALERTS,
+  LOCAL_CHAT_MESSAGES,
   SETTINGS,
 } = STORAGE_KEYS;
 
 const {
   MAX_MESSAGE_IDS,
   MAX_LOCAL_ALERTS,
+  MAX_CHAT_MESSAGES,
 } = STORAGE_LIMITS;
 
 export const LocalStorageService = {
@@ -27,6 +29,8 @@ export const LocalStorageService = {
       if (ids === null) await AsyncStorage.setItem(RECEIVED_MESSAGE_IDS, JSON.stringify([]));
       if (alerts === null) await AsyncStorage.setItem(LOCAL_ALERTS, JSON.stringify([]));
       if (settings === null) await AsyncStorage.setItem(SETTINGS, JSON.stringify({}));
+      const chat = await AsyncStorage.getItem(LOCAL_CHAT_MESSAGES);
+      if (chat === null) await AsyncStorage.setItem(LOCAL_CHAT_MESSAGES, JSON.stringify([]));
     } catch (e) {
       console.warn('[LocalStorage] initialize failed', e);
     }
@@ -113,5 +117,38 @@ export const LocalStorageService = {
     const deviceId = uuid();
     await this.updateSettings({ deviceId });
     return deviceId;
+  },
+
+  async getChatMessages(limit = 100) {
+    try {
+      const raw = await AsyncStorage.getItem(LOCAL_CHAT_MESSAGES);
+      const messages = raw ? JSON.parse(raw) : [];
+      const n = Math.min(limit, messages.length);
+      return messages.slice(-n).reverse();
+    } catch {
+      return [];
+    }
+  },
+
+  async appendChatMessage(msg) {
+    try {
+      const raw = await AsyncStorage.getItem(LOCAL_CHAT_MESSAGES);
+      const messages = raw ? JSON.parse(raw) : [];
+      messages.push(msg);
+      const trimmed = messages.slice(-MAX_CHAT_MESSAGES);
+      await AsyncStorage.setItem(LOCAL_CHAT_MESSAGES, JSON.stringify(trimmed));
+    } catch (e) {
+      console.warn('[LocalStorage] appendChatMessage failed', e);
+    }
+  },
+
+  async isChatMessageDuplicate(id) {
+    try {
+      const raw = await AsyncStorage.getItem(LOCAL_CHAT_MESSAGES);
+      const messages = raw ? JSON.parse(raw) : [];
+      return messages.some((m) => m.id === id);
+    } catch {
+      return false;
+    }
   },
 };

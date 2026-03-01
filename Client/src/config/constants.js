@@ -38,12 +38,14 @@ export const BLE_CONFIG = {
 export const STORAGE_KEYS = {
   RECEIVED_MESSAGE_IDS: '@sift/received_message_ids',
   LOCAL_ALERTS: '@sift/local_alerts',
+  LOCAL_CHAT_MESSAGES: '@sift/local_chat_messages',
   SETTINGS: '@sift/settings',
 };
 
 export const STORAGE_LIMITS = {
   MAX_MESSAGE_IDS: 1000,
   MAX_LOCAL_ALERTS: 500,
+  MAX_CHAT_MESSAGES: 200,
   MAX_RUNTIME_ALERTS: 100,
 };
 
