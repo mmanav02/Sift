@@ -4,19 +4,24 @@
  * (Client opens the connection to the server; once open, traffic is server → client only.)
  */
 
-import { APP_CONFIG, WEBSOCKET_CONFIG } from '../config/constants.js';
+import { APP_CONFIG, WEBSOCKET_CONFIG, PLACEHOLDER_SERVER_URL } from '../config/constants.js';
 
 const { PATH, RECONNECT_DELAY_MS } = WEBSOCKET_CONFIG;
 
+function isPlaceholderServerUrl(url) {
+  const u = (url || APP_CONFIG.CENTRAL_SERVER_URL || '').trim().toLowerCase();
+  return !u || u === PLACEHOLDER_SERVER_URL.toLowerCase() || u.includes('api.example.com');
+}
+
 function getWebSocketUrl(serverBaseUrl, deviceId = null) {
   const base = (serverBaseUrl || APP_CONFIG.CENTRAL_SERVER_URL || 'https://api.example.com').trim();
-  const url = new URL(base);
-  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-  url.pathname = url.pathname.replace(/\/?$/, '') + (PATH.startsWith('/') ? PATH : `/${PATH}`);
-  if (deviceId) {
-    url.searchParams.set('deviceId', deviceId);
-  }
-  return url.toString();
+  const wsProtocol = base.startsWith('https') ? 'wss' : 'ws';
+  const withoutProtocol = base.replace(/^https?:\/\//i, '');
+  const [hostPart, ...rest] = withoutProtocol.split('/');
+  const pathPart = rest.length ? '/' + rest.join('/') : '';
+  const path = (pathPart.replace(/\/?$/, '') + (PATH.startsWith('/') ? PATH : `/${PATH}`)) || '/';
+  const query = deviceId ? `?deviceId=${encodeURIComponent(deviceId)}` : '';
+  return `${wsProtocol}://${hostPart}${path}${query}`;
 }
 
 class WebSocketService {
@@ -25,6 +30,7 @@ class WebSocketService {
     this._serverBaseUrl = null;
     this._deviceId = null;
     this._onAlert = null;
+    this._onConnectionChange = null;
     this._reconnectTimeoutId = null;
     this._intentionalClose = false;
   }
@@ -33,10 +39,21 @@ class WebSocketService {
     this._onAlert = callback;
   }
 
+  setOnConnectionChange(callback) {
+    this._onConnectionChange = callback;
+  }
+
   connect(serverBaseUrl, deviceId = null) {
     this._intentionalClose = false;
     this._serverBaseUrl = serverBaseUrl || APP_CONFIG.CENTRAL_SERVER_URL;
     this._deviceId = deviceId;
+
+    if (isPlaceholderServerUrl(this._serverBaseUrl)) {
+      if (APP_CONFIG.DEBUG_MODE) {
+        console.log('[WebSocketService] skipping connect (placeholder server URL)');
+      }
+      return;
+    }
 
     const url = getWebSocketUrl(this._serverBaseUrl, deviceId);
 
@@ -52,6 +69,7 @@ class WebSocketService {
       if (APP_CONFIG.DEBUG_MODE) {
         console.log('[WebSocketService] connected');
       }
+      if (this._onConnectionChange) this._onConnectionChange(true);
     };
 
     // Receive-only: server sends alerts; client never sends on this socket.
@@ -75,6 +93,7 @@ class WebSocketService {
 
     this._ws.onclose = () => {
       this._ws = null;
+      if (this._onConnectionChange) this._onConnectionChange(false);
       if (!this._intentionalClose) {
         this._scheduleReconnect();
       }
@@ -83,6 +102,7 @@ class WebSocketService {
 
   _scheduleReconnect() {
     if (this._reconnectTimeoutId) return;
+    if (isPlaceholderServerUrl(this._serverBaseUrl)) return;
     this._reconnectTimeoutId = setTimeout(() => {
       this._reconnectTimeoutId = null;
       if (this._intentionalClose) return;
@@ -103,6 +123,7 @@ class WebSocketService {
       this._ws.close();
       this._ws = null;
     }
+    if (this._onConnectionChange) this._onConnectionChange(false);
     this._serverBaseUrl = null;
     this._deviceId = null;
   }

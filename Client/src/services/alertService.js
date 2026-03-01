@@ -20,6 +20,9 @@ class AlertService {
   }
 
   /**
+   * Single entry point for any received alert (server, BLE, or fake).
+   * Independent of registration: whenever a unique alert is received, we store and propagate via BLE.
+   * Checks for duplicate; if new, stores and propagates via Bluetooth.
    * @param {object|AlertMessage} alert - Alert data (id required)
    * @param {string} source - ALERT_SOURCE_SERVER | ALERT_SOURCE_BLUETOOTH
    * @returns {Promise<boolean>} true if accepted and processed, false if duplicate/invalid
@@ -31,10 +34,11 @@ class AlertService {
     const duplicate = await LocalStorageService.isMessageDuplicate(msg.id);
     if (duplicate) return false;
 
-    msg.receivedVia = source;
+    msg.source = source;
     await LocalStorageService.addMessageId(msg.id);
     await LocalStorageService.saveAlert(msg);
 
+    // Propagate to nearby devices via BLE (same path for fake, server, or BLE-originated alerts)
     if (this._bluetoothService && typeof this._bluetoothService.broadcastAlert === 'function') {
       await this.broadcastAlert(msg);
     }
@@ -74,7 +78,8 @@ class AlertService {
     const byType = {};
     const bySeverity = {};
     alerts.forEach((a) => {
-      byType[a.alertType] = (byType[a.alertType] || 0) + 1;
+      const t = a.type ?? a.alertType;
+      byType[t] = (byType[t] || 0) + 1;
       bySeverity[a.severity] = (bySeverity[a.severity] || 0) + 1;
     });
     return {

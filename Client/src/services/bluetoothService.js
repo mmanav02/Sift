@@ -4,7 +4,7 @@
 
 import { BleManager } from 'react-native-ble-plx';
 import { Platform, PermissionsAndroid } from 'react-native';
-import { BLE_CONFIG } from '../config/constants.js';
+import { BLE_CONFIG, APP_CONFIG } from '../config/constants.js';
 
 const { SERVICE_UUID, CHARACTERISTIC_UUID, DEVICE_NAME_PREFIX, SCAN_DURATION_MS } = BLE_CONFIG;
 
@@ -12,6 +12,7 @@ class BluetoothService {
   constructor() {
     this._manager = new BleManager();
     this._connectedDevices = new Map();
+    this._connectingIds = new Set();
     this._onMessage = null;
   }
 
@@ -65,16 +66,41 @@ class BluetoothService {
     this._manager.stopDeviceScan();
   }
 
+  isDeviceConnected(deviceId) {
+    return this._connectedDevices.has(deviceId);
+  }
+
   async connectToDevice(device) {
+    if (this._connectedDevices.has(device.id)) return this._connectedDevices.get(device.id).device;
+    if (this._connectingIds.has(device.id)) return null;
+    this._connectingIds.add(device.id);
     try {
       await device.connect();
       const discovered = await device.discoverAllServicesAndCharacteristics();
-      this._connectedDevices.set(device.id, { device: discovered });
+      this._connectedDevices.set(device.id, { device: discovered, name: device.name || null });
+      discovered.onDisconnected(() => {
+        this._connectedDevices.delete(device.id);
+      });
       return discovered;
     } catch (e) {
       console.warn('[BluetoothService] connectToDevice failed', e);
       throw e;
+    } finally {
+      this._connectingIds.delete(device.id);
     }
+  }
+
+  /**
+   * List of BLE devices we send alerts to (connected peers).
+   * @returns {{ id: string, name: string | null }[]}
+   */
+  getConnectedDevices() {
+    const list = [];
+    for (const [id, entry] of this._connectedDevices) {
+      const name = entry.name ?? entry.device?.name ?? null;
+      list.push({ id, name });
+    }
+    return list;
   }
 
   async disconnectDevice(deviceId) {
@@ -87,20 +113,34 @@ class BluetoothService {
   }
 
   async broadcastAlert(alert) {
+    if (this._connectedDevices.size === 0) {
+      if (APP_CONFIG.DEBUG_MODE) {
+        console.log('[BluetoothService] no devices connected; alert not sent via BLE');
+      }
+      return;
+    }
     const payload = typeof alert === 'object' ? JSON.stringify(alert) : String(alert);
     const base64 = this._toBase64(payload);
 
-    for (const [, { device }] of this._connectedDevices) {
+    const toRemove = [];
+    for (const [id, { device }] of this._connectedDevices) {
       try {
-        await device.writeCharacteristicForService(
+        await device.writeCharacteristicWithoutResponseForService(
           SERVICE_UUID,
           CHARACTERISTIC_UUID,
           base64
         );
       } catch (e) {
-        console.warn('[BluetoothService] broadcastAlert write failed', device.id, e);
+        const msg = (e?.message || String(e)).toLowerCase();
+        if (msg.includes('not connected') || msg.includes('disconnected') || msg.includes('timed out') || msg.includes('rejected')) {
+          toRemove.push(id);
+        }
+        if (APP_CONFIG.DEBUG_MODE) {
+          console.warn('[BluetoothService] broadcastAlert write failed', device.id, e?.message);
+        }
       }
     }
+    toRemove.forEach((id) => this._connectedDevices.delete(id));
   }
 
   _toBase64(str) {
@@ -131,6 +171,7 @@ class BluetoothService {
 
   destroy() {
     this.stopScanning();
+    this._connectingIds.clear();
     this._connectedDevices.clear();
     this._manager.destroy();
   }

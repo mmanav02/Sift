@@ -1,1 +1,17 @@
 node_modules
+
+# Android
+Client/android/.gradle/
+Client/android/build/
+Client/android/app/build/
+Client/android/app/.cxx/
+Client/android/local.properties
+*.iml
+.DS_Store
+
+# iOS (when you add it)
+Client/ios/build/
+Client/ios/Pods/
+Client/ios/*.xcworkspace/xcuserdata/
+Client/ios/*.xcodeproj/xcuserdata/
+Client/ios/*.xcodeproj/project.xcworkspace/xcuserdata/
