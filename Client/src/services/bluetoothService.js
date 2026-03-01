@@ -16,6 +16,8 @@ class BluetoothService {
     this._connectingIds = new Set();
     this._onMessage = null;
     this._onDeviceFound = null;
+    this._isScanning = false;
+    this._restartTimeoutId = null;
   }
 
   async requestBluetoothPermissions() {
@@ -50,11 +52,14 @@ class BluetoothService {
 
   startScanning(onDeviceFound) {
     this._onDeviceFound = onDeviceFound ?? null;
+    if (this._isScanning) return;
+    this._isScanning = true;
     this._manager.startDeviceScan(
       null,
       { allowDuplicates: false },
       (err, device) => {
         if (err) {
+          this._isScanning = false;
           console.warn('[BluetoothService] scan error', err);
           return;
         }
@@ -66,13 +71,24 @@ class BluetoothService {
   }
 
   stopScanning() {
-    this._manager.stopDeviceScan();
+    if (this._restartTimeoutId) {
+      clearTimeout(this._restartTimeoutId);
+      this._restartTimeoutId = null;
+    }
+    try {
+      this._manager.stopDeviceScan();
+    } catch (_) {}
+    this._isScanning = false;
   }
 
   restartScanning() {
     if (!this._onDeviceFound) return;
-    try { this.stopScanning(); } catch (_) {}
-    setTimeout(() => this.startScanning(this._onDeviceFound), 500);
+    if (this._restartTimeoutId) return;
+    this.stopScanning();
+    this._restartTimeoutId = setTimeout(() => {
+      this._restartTimeoutId = null;
+      this.startScanning(this._onDeviceFound);
+    }, 1500);
   }
 
   isDeviceConnected(deviceId) {

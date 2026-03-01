@@ -20,6 +20,20 @@ async def notify_all_users(alert: dict, body_override: Optional[str] = None):
         f"{alert.get('type', 'disaster').capitalize()} alert near {alert.get('city') or 'your area'}"
     )
 
+    # Full alert object so client can use payload.alert (same shape as agent broadcast)
+    alert_obj = {
+        "id":          alert.get("id", ""),
+        "type":        alert.get("type", ""),
+        "severity":    alert.get("severity", ""),
+        "title":       alert.get("title", "Disaster Alert"),
+        "description": alert.get("description") or body,
+        "lat":         alert.get("lat"),
+        "lng":         alert.get("lng"),
+        "city":        alert.get("city"),
+        "state":       alert.get("state"),
+        "source":      alert.get("source", "demo"),
+        "created_at":  alert.get("created_at"),
+    }
     payload = {
         "event":    "alert",
         "alertId":  alert.get("id", ""),
@@ -27,6 +41,7 @@ async def notify_all_users(alert: dict, body_override: Optional[str] = None):
         "body":     body,
         "type":     alert.get("type", ""),
         "severity": alert.get("severity", ""),
+        "alert":    alert_obj,
     }
 
     await ws_manager.broadcast(payload)

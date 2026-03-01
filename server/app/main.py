@@ -3,11 +3,15 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import uuid
+from typing import Optional
+
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.routers import alerts, users
+from app.schemas import RegisterRequest
 from app.services import storage, notifications
 from app.services.disaster_agent import create_agent, agent_status
 
@@ -20,15 +24,20 @@ logger = logging.getLogger(__name__)
 class ConnectionManager:
     def __init__(self):
         self._connections: list[WebSocket] = []
+        self._device_by_ws: dict = {}
 
-    async def connect(self, ws: WebSocket):
+    async def connect(self, ws: WebSocket, device_id: str = ""):
         await ws.accept()
         self._connections.append(ws)
+        if device_id:
+            self._device_by_ws[id(ws)] = device_id
         logger.info(f"[ws] Connected. Total: {len(self._connections)}")
 
-    def disconnect(self, ws: WebSocket):
+    def disconnect(self, ws: WebSocket) -> Optional[str]:
+        device_id = self._device_by_ws.pop(id(ws), None)
         self._connections.remove(ws)
         logger.info(f"[ws] Disconnected. Total: {len(self._connections)}")
+        return device_id
 
     async def broadcast(self, data: dict):
         dead = []
@@ -98,6 +107,23 @@ app.include_router(alerts.router)
 app.include_router(users.router)
 
 
+@app.post("/api/register")
+async def api_register(request: Request, body: Optional[RegisterRequest] = None):
+    """Register device with optional deviceId; server stores id and IP/port, returns user_id."""
+    if body is None:
+        body = RegisterRequest()
+    device_id = (body.deviceId or "").strip()
+    if not device_id:
+        device_id = str(uuid.uuid4())
+    forwarded = request.headers.get("x-forwarded-for")
+    ip = forwarded.split(",")[0].strip() if forwarded else (request.client.host if request.client else "")
+    port = request.client.port if request.client else 0
+    user = {"id": device_id, "ip": ip, "port": port, "connected": False}
+    storage.upsert_user(user)
+    logger.info(f"[api] Registered device {device_id} from {ip}:{port}")
+    return {"user_id": device_id}
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "version": "1.0.0"}
@@ -105,9 +131,19 @@ async def health():
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
-    await ws_manager.connect(ws)
+    device_id = (ws.query_params.get("deviceId") or "").strip()
+    await ws_manager.connect(ws, device_id)
     try:
+        if device_id and ws.client:
+            storage.upsert_user({
+                "id": device_id,
+                "ip": ws.client.host or "",
+                "port": ws.client.port or 0,
+                "connected": True,
+            })
         while True:
             await ws.receive_text()
     except WebSocketDisconnect:
-        ws_manager.disconnect(ws)
+        disconnected_id = ws_manager.disconnect(ws)
+        if disconnected_id:
+            storage.set_user_connected(disconnected_id, False)

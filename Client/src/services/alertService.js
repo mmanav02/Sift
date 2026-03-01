@@ -21,9 +21,9 @@ class AlertService {
 
   /**
    * Single entry point for any received alert (server, BLE, or fake).
-   * Independent of registration: whenever a unique alert is received, we store and propagate via BLE.
-   * Checks for duplicate; if new, stores and propagates via Bluetooth.
-   * @param {object|AlertMessage} alert - Alert data (id required)
+   * When the client with internet receives a new alert from the server, it stores it and
+   * broadcasts to all connected BLE peers (offline devices) so they get the alert too.
+   * @param {object|AlertMessage} alert - Alert data (id required for acceptance)
    * @param {string} source - ALERT_SOURCE_SERVER | ALERT_SOURCE_BLUETOOTH
    * @returns {Promise<boolean>} true if accepted and processed, false if duplicate/invalid
    */
@@ -38,7 +38,7 @@ class AlertService {
     await LocalStorageService.addMessageId(msg.id);
     await LocalStorageService.saveAlert(msg);
 
-    // Propagate to nearby devices via BLE (same path for fake, server, or BLE-originated alerts)
+    // New (unique id): always broadcast to connected BLE peers so offline devices receive it
     if (this._bluetoothService && typeof this._bluetoothService.broadcastAlert === 'function') {
       await this.broadcastAlert(msg);
     }

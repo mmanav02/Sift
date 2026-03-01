@@ -87,7 +87,6 @@ export default function App() {
   const [pingSending, setPingSending] = useState(false);
   const [pingSent, setPingSent] = useState(0);
   const [pingsReceived, setPingsReceived] = useState([]);
-  const registrationIntervalRef = useRef(null);
   const statsIntervalRef = useRef(null);
   const pingsReceivedRef = useRef([]);
 
@@ -132,10 +131,9 @@ export default function App() {
         }
 
         if (useServer) {
-          await tryRegister();
           const deviceId = await LocalStorageService.getDeviceId();
+          websocketService.setOnConnectionOpen(tryRegister);
           websocketService.connect(APP_CONFIG.CENTRAL_SERVER_URL, deviceId);
-          registrationIntervalRef.current = setInterval(tryRegister, REGISTRATION_INTERVAL_MS);
         }
 
         websocketService.setOnConnectionChange(setWsConnected);
@@ -212,7 +210,6 @@ export default function App() {
 
     return () => {
       mounted = false;
-      if (registrationIntervalRef.current) clearInterval(registrationIntervalRef.current);
       if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
       websocketService.disconnect();
       blePeripheralService.stop();

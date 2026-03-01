@@ -31,6 +31,7 @@ class WebSocketService {
     this._deviceId = null;
     this._onAlert = null;
     this._onConnectionChange = null;
+    this._onConnectionOpen = null;
     this._reconnectTimeoutId = null;
     this._intentionalClose = false;
   }
@@ -41,6 +42,11 @@ class WebSocketService {
 
   setOnConnectionChange(callback) {
     this._onConnectionChange = callback;
+  }
+
+  /** Called when the WebSocket opens (initial connect or after reconnect). Use e.g. to re-register with the server. */
+  setOnConnectionOpen(callback) {
+    this._onConnectionOpen = callback;
   }
 
   connect(serverBaseUrl, deviceId = null) {
@@ -70,6 +76,7 @@ class WebSocketService {
         console.log('[WebSocketService] connected');
       }
       if (this._onConnectionChange) this._onConnectionChange(true);
+      if (this._onConnectionOpen) this._onConnectionOpen();
     };
 
     // Receive-only: server sends alerts; client never sends on this socket.
@@ -78,7 +85,15 @@ class WebSocketService {
         const raw = event.data;
         if (typeof raw !== 'string') return;
         const payload = JSON.parse(raw);
-        const alert = payload?.data ?? payload?.alert ?? (payload?.id ? payload : null);
+        const eventType = payload?.event;
+        const isAlertEvent = eventType === 'alert' || eventType === 'alert:new';
+        let alert = isAlertEvent && payload?.alert
+          ? payload.alert
+          : (payload?.data ?? payload?.alert ?? (payload?.id ? payload : null));
+        // Ensure alert has id so processAlert accepts it and broadcasts to BLE peers
+        if (alert && !alert.id && payload?.alertId) {
+          alert = { ...alert, id: payload.alertId };
+        }
         if (alert && this._onAlert) {
           this._onAlert(alert);
         }

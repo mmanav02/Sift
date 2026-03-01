@@ -79,7 +79,7 @@ export class AlertMessage {
     const created = data.created_at ?? data.timestamp ?? new Date().toISOString();
     const updated = data.updated_at ?? created;
     return new AlertMessage({
-      id: data.id,
+      id: data.id ?? data.alertId,
       type: data.type ?? data.alertType ?? 'other',
       severity: data.severity ?? 1,
       title: data.title ?? '',

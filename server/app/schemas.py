@@ -43,6 +43,11 @@ class UserRegister(BaseModel):
     pass
 
 
+class RegisterRequest(BaseModel):
+    """Body for POST /api/register; client may send deviceId to persist identity."""
+    deviceId: Optional[str] = None
+
+
 class LocationUpdate(BaseModel):
     lat: float = Field(..., ge=-90, le=90)
     lng: float = Field(..., ge=-180, le=180)
@@ -61,12 +66,12 @@ class AlertResponse(BaseModel):
     city: Optional[str]
     state: Optional[str]
     country: Optional[str]
-    zipcode: Optional[str]
+    zipcode: Optional[str] = None
     lat: float
     lng: float
     source: str
-    relayed_by: Optional[str]
-    hop_count: Optional[int]
+    relayed_by: Optional[str] = None
+    hop_count: Optional[int] = None
     created_at: datetime
     updated_at: datetime
     active: bool

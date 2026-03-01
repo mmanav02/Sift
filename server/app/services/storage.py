@@ -86,3 +86,15 @@ def upsert_user(user: dict) -> dict:
     _save(USERS_FILE, users)
     logger.info(f"[storage] User registered: {user.get('id')}")
     return user
+
+
+def set_user_connected(user_id: str, connected: bool) -> None:
+    """Update a user's connected flag and last_seen so users.json stays consistent with WebSocket state."""
+    users = _load(USERS_FILE)
+    now = _now()
+    for i, u in enumerate(users):
+        if u.get("id") == user_id:
+            users[i]["connected"] = connected
+            users[i]["last_seen"] = now
+            _save(USERS_FILE, users)
+            return

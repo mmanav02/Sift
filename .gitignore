@@ -42,3 +42,4 @@ Client/android/app/.cxx/
 Client/android/local.properties
 *.iml
 .DS_Store
+data/

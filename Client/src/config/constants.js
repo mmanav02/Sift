@@ -67,7 +67,7 @@ export const ALERT_SOURCE_BLUETOOTH = 'bluetooth';
 export const PLACEHOLDER_SERVER_URL = 'https://api.example.com';
 
 export const APP_CONFIG = {
-  CENTRAL_SERVER_URL: 'https://api.example.com',
+  CENTRAL_SERVER_URL: 'https://ae6c-129-210-115-231.ngrok-free.app',
   VERSION: '1.0.0',
   DEBUG_MODE: __DEV__ ?? false,
 };

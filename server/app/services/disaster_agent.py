@@ -1,4 +1,5 @@
 import json
+import math
 import uuid
 import asyncio
 import logging
@@ -18,6 +19,23 @@ from app.services.data_sources import (
 
 logger   = logging.getLogger(__name__)
 settings = get_settings()
+
+# Radius in km: only alerts of the *same type* within this distance and time window are treated as
+# the same event. Different types (e.g. earthquake vs tsunami) in the same radius are both stored.
+DEDUP_RADIUS_KM = 50.0
+
+
+def _distance_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Approximate distance in km between two points (Haversine)."""
+    R = 6371.0  # Earth radius km
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlam = math.radians(lng2 - lng1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
+
 
 agent_status: dict = {
     "last_run":        None,
@@ -390,7 +408,7 @@ class DisasterAgent:
         if lat is None or lng is None:
             return {"saved": False, "reason": "Missing lat/lng coordinates"}
 
-        if self._is_duplicate(alert_type, hours=2):
+        if self._is_duplicate(alert_type, lat, lng, hours=2):
             logger.info(f"[DisasterAgent] ⏭️  Duplicate skipped: {args.get('title', '<untitled>')}")
             return {"saved": False, "reason": "Duplicate — similar alert already in JSON storage"}
 
@@ -436,7 +454,7 @@ class DisasterAgent:
             logger.error(f"[DisasterAgent] Save error: {e}")
             return {"saved": False, "reason": str(e)}
 
-    def _is_duplicate(self, alert_type: str, hours: int = 2) -> bool:
+    def _is_duplicate(self, alert_type: str, lat: float, lng: float, hours: int = 2) -> bool:
         since = datetime.now(timezone.utc) - timedelta(hours=hours)
         for alert in storage.get_all_alerts():
             if alert.get("type") != alert_type or not alert.get("active", True):
@@ -445,7 +463,13 @@ class DisasterAgent:
                 created = datetime.fromisoformat(alert["created_at"])
                 if created.tzinfo is None:
                     created = created.replace(tzinfo=timezone.utc)
-                if created >= since:
+                if created < since:
+                    continue
+                a_lat = alert.get("lat")
+                a_lng = alert.get("lng")
+                if a_lat is None or a_lng is None:
+                    continue
+                if _distance_km(lat, lng, float(a_lat), float(a_lng)) < DEDUP_RADIUS_KM:
                     return True
             except Exception:
                 continue
